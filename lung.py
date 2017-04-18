@@ -14,21 +14,31 @@ from glob import glob
 import matplotlib.pyplot as plot
 
 working_path = "/Users/caozhenjie/Downloads/Result/"
-file_list=glob(working_path+"images_*.npy")
+file_list=glob(working_path+"images_*.npy")   # 这些都是 原始的image
+
+
+
+
 
 for img_file in file_list:
     # I ran into an error when using Kmean on np.float16, so I'm using np.float64 here
     imgs_to_process = np.load(img_file).astype(np.float64) 
     print "on image", img_file
     for i in range(len(imgs_to_process)):
+        print("img的编号",img_file)
         print("走了一张图？")
-        img = imgs_to_process[i] # 读出来的图片
-        #Standardize the pixel values
-        mean = np.mean(img)
-        std = np.std(img)
+        img = imgs_to_process[i] # 读出来的图片,正确的格式
+        
+        #standardize the pixel values and take a look at the intensity distribution
+        mean = np.mean(img)# 平均
+        std = np.std(img) # 方差
         img = img-mean
         img = img/std
+        print("找到pixel上面的lung的位置")
+        plot.hist(img.flatten(),bins=200)
+        plot.show()
         # Find the average pixel value near the lungs
+        
 
         # to renormalize washed out images
         middle = img[100:400,100:400] 
@@ -39,9 +49,10 @@ for img_file in file_list:
         # underflow and overflow on the pixel spectrum
         img[img==max]=mean
         img[img==min]=mean
-        #
+        #把图像给切割了
+        
         # Using Kmeans to separate foreground (radio-opaque tissue)
-        # and background (radio transparent tissue ie lungs)
+        # And background (radio transparent tissue ie lungs)
         # Doing this only on the center of the image to avoid 
         # the non-tissue parts of the image as much as possible
         #
@@ -49,7 +60,13 @@ for img_file in file_list:
         centers = sorted(kmeans.cluster_centers_.flatten())
         threshold = np.mean(centers)
         thresh_img = np.where(img<threshold,1.0,0.0)  # threshold the image
-        #
+        
+        print("这个是用了kmeans之后的，去掉了背景")
+        plot.imshow(thresh_img)
+        plot.show()
+        
+        
+        
         # I found an initial erosion helful for removing graininess from some of the regions
         # and then large dialation is used to make the lung region 
         # engulf the vessels and incursions into the lung cavity by 
@@ -69,8 +86,8 @@ for img_file in file_list:
         #  simplicity. 
         #
         labels = measure.label(dilation)
-        label_vals = np.unique(labels)
-        print("Unique之后的")
+        #label_vals = np.unique(labels)
+        print("侵蚀扩张之后的")
         plot.imshow(labels)
         plot.show()
         regions = measure.regionprops(labels)
@@ -92,26 +109,27 @@ for img_file in file_list:
         
                                   
         print("***********************************")
+        print("用label只留下来了要的区域")
         plot.imshow(mask,cmap='gray')
         plot.show()
         print("***********************************")
-        imgs_to_process[i] = mask
-        np.save(img_file.replace("images","lungmask"),imgs_to_process)
-    
+        imgs_to_process[i] = mask   # 阶段性成果
+        np.save(img_file.replace("images","lungmask"),imgs_to_process) # lungmask 是lung的mask
+
 
 #
 #    Here we're applying the masks and cropping and resizing the image
 #
 
 
-file_list=glob(working_path+"lungmask_*.npy")
+file_list=glob(working_path+"lungmask_*.npy")    # 这些都是nodule的mask
 out_images = []      #final set of images
 out_nodemasks = []   #final set of nodemasks
 for fname in file_list:
     print "working on file ", fname
-    imgs_to_process = np.load(fname.replace("lungmask","images")) #把
-    masks = np.load(fname)
-    node_masks = np.load(fname.replace("lungmask","masks"))
+    imgs_to_process = np.load(fname.replace("lungmask","images")) #imgs2process 是原本的file
+    masks = np.load(fname)   #mask是lung的mask
+    node_masks = np.load(fname.replace("lungmask","masks")) # node_mask 就是在真正的node的mask
     
     # crop to 512* 512
     for i in range(len(imgs_to_process)):
@@ -188,14 +206,14 @@ num_images = len(out_images)
 final_images = np.ndarray([num_images,1,512,512],dtype=np.float32)
 final_masks = np.ndarray([num_images,1,512,512],dtype=np.float32)
 for i in range(num_images):
-    final_images[i,0] = out_images[i]
-    final_masks[i,0] = out_nodemasks[i]
+    final_images[i,0] = out_images[i]  #  Images with lung mask
+    final_masks[i,0] = out_nodemasks[i]  # Nodule mask
 
 rand_i = np.random.choice(range(num_images),size=num_images,replace=False)
 test_i = int(0.2*num_images)
 np.save(working_path+"trainImages.npy",final_images[rand_i[test_i:]])
 np.save(working_path+"trainMasks.npy",final_masks[rand_i[test_i:]])
-np.save(working_path+"testImages.npy",final_images[rand_i[:test_i]])
+np.save(working_path+"testImages.npy",final_images[rand_i[:test_i]])    
 np.save(working_path+"testMasks.npy",final_masks[rand_i[:test_i]])
 
 imgs = np.load(working_path+'images_0.npy')

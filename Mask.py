@@ -21,12 +21,13 @@ except:
     tqdm = lambda x: x
 
 #
-# Getting list of image files
+# Getting list of image files，找到图片的位置在哪里
 luna_path = "/Users/caozhenjie/Downloads/"
 luna_subset_path = luna_path+"subset0/"
 output_path = "/Users/caozhenjie/Downloads/Result/"
 file_list=glob(luna_subset_path+"*.mhd")
 
+print("这是filelist",file_list)
 
 
 #Some helper functions
@@ -96,37 +97,41 @@ def get_filename(file_list, case):
         if case in f:
             return(f)
 #
-# The locations of the nodes
+# Looping over the image files
+## The locations of the nodes,找到node在哪里
 df_node = pd.read_csv(luna_path+"annotations.csv")
 df_node["file"] = df_node["seriesuid"].map(lambda file_name: get_filename(file_list, file_name))
-df_node = df_node.dropna()
+df_node = df_node.dropna() # 所有有nodule的人的编号
+#  
 
-#####
-#
-# Looping over the image files
-#
+
 
 for fcount, img_file in enumerate(tqdm(file_list)):
-    mini_df = df_node[df_node["file"]==img_file] #get all nodules associate with file
+    
+    print("Getting mask for image file %s" % img_file.replace(luna_subset_path,""))
+    
+    mini_df = df_node[df_node["file"]==img_file] #所有有nodule的人的编号留下来的文件
+    
     if mini_df.shape[0]>0: # some files may not have a nodule--skipping those 
         # load the data once
         # change to world coordinates
-        itk_img = sitk.ReadImage(img_file) 
-        img_array = sitk.GetArrayFromImage(itk_img) # indexes are z,y,x (notice the ordering)
+        #biggest_node = np.argsort(mini_df["diameter_mm"].values)[-1]   # just using the biggest node
+        itk_img = sitk.ReadImage(img_file)          # 用sitk读出来了img_file里面的图
+        img_array = sitk.GetArrayFromImage(itk_img) # 再用getarray把indexes are z,y,x (notice the ordering)
         num_z, height, width = img_array.shape        #heightXwidth constitute the transverse plane
         origin = np.array(itk_img.GetOrigin())      # x,y,z  Origin in world coordinates (mm)
         spacing = np.array(itk_img.GetSpacing())    # spacing of voxels in world coor. (mm)
         # go through all nodes (why just the biggest?)
-        for node_idx, cur_row in mini_df.iterrows():       
+        for node_idx, cur_row in mini_df.iterrows():    
             node_x = cur_row["coordX"]
             node_y = cur_row["coordY"]
             node_z = cur_row["coordZ"]
-            diam = cur_row["diameter_mm"]
+            diam = cur_row["diameter_mm"]  
             # just keep 3 slices
             imgs = np.ndarray([3,height,width],dtype=np.float32)
             masks = np.ndarray([3,height,width],dtype=np.uint8)
             center = np.array([node_x, node_y, node_z])   # nodule center
-            v_center = np.rint((center-origin)/spacing)  # nodule center in voxel space (still x,y,z ordering)
+            v_center = np.rint((center-origin)/spacing)  # 每个人的图片里面 nodule center in voxel space (still x,y,z ordering)
             i = 0
             for i_z in range(int(v_center[2])-1,int(v_center[2])+2):
                 mask = make_mask(center,diam,i_z*spacing[2]+origin[2],width,height,spacing,origin)
@@ -135,16 +140,17 @@ for fcount, img_file in enumerate(tqdm(file_list)):
                 i+=1
             np.save(output_path+"images_%d.npy" % (fcount) ,imgs)
             np.save(output_path+"masks_%d.npy" % (fcount) ,masks)
-
+            
 imgs = np.load(output_path+'images_0.npy')
 masks = np.load(output_path+'masks_0.npy')
 for i in range(len(imgs)):
-    print ("image %d" % i)
-    print (origin)
+    print ("这个是image的id","image %d" % i)
+    print ("这是origin的坐标", origin)
     fig,ax = plt.subplots(2,2,figsize=[8,8])
     ax[0,0].imshow(imgs[i],cmap='gray')
     ax[0,1].imshow(masks[i],cmap='gray')
     ax[1,0].imshow(imgs[i]*masks[i],cmap='gray')
+    print("这个是mask，第三张图是nodule的")
     plt.show()
     raw_input("hit enter to view the next: ")
 
